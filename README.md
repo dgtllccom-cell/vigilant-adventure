@@ -1,3 +1,3 @@
 # vigilant-adventure
 
-ok
+Project status: ok.
