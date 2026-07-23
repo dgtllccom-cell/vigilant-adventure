@@ -45,6 +45,18 @@ async function main() {
     console.warn("[dev-single] Failed to load env config:", err?.message || err);
   }
 
+  // Purge stale .next cache to prevent Next.js webpack runtime chunk missing errors (e.g. Cannot find module ./5873.js)
+  const fs = require("node:fs");
+  const nextDir = path.join(dir, ".next");
+  if (process.env.KEEP_NEXT_CACHE !== "1" && fs.existsSync(nextDir)) {
+    try {
+      fs.rmSync(nextDir, { recursive: true, force: true });
+      console.log("[dev-single] Purged stale .next build cache successfully.");
+    } catch (cacheErr) {
+      console.warn("[dev-single] Cache purge note:", cacheErr?.message || cacheErr);
+    }
+  }
+
   const { startServer } = require("next/dist/server/lib/start-server");
 
   const allowRetry = process.env.NEXT_DEV_ALLOW_RETRY === "1";
