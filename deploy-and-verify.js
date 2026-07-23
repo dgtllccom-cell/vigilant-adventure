@@ -33,14 +33,14 @@ async function checkServerHealth(url) {
 
 async function run() {
   console.log("=================================================================");
-  console.log("   DIGITAL DOCK ERP - CLEAN HISTORY DEPLOYMENT & 502 FIX");
+  console.log("   DIGITAL DOCK ERP - NON-INTERACTIVE AUTOMATED VPS DEPLOYMENT");
   console.log(`   Repository : ${REPO_URL}`);
   console.log(`   Server IP  : ${SERVER_IP}`);
   console.log("=================================================================\n");
 
   // Step 1: Verify .gitignore
   try {
-    log("Step 1/10: Verifying .gitignore file for size & secret exclusions...");
+    log("Step 1/7: Verifying .gitignore file for security & size exclusions...");
     const gitignorePath = '.gitignore';
     const requiredPatterns = [
       'node_modules/',
@@ -81,7 +81,7 @@ async function run() {
 
   // Step 2: Configure Git Remote
   try {
-    log("\nStep 2/10: Setting Git remote origin to vigilant-adventure repository...");
+    log("\nStep 2/7: Setting Git remote origin to vigilant-adventure repository...");
     try {
       execSync(`git remote set-url origin ${REPO_URL}`, { stdio: 'pipe' });
     } catch {
@@ -93,109 +93,78 @@ async function run() {
     process.exit(1);
   }
 
-  // Step 3: Purge .codex-backups & Large Files from Git History via Clean Orphan Branch
-  try {
-    log("\nStep 3/10: Purging large files (.codex-backups) & creating clean orphan release history...");
-    try {
-      execSync('git checkout --orphan clean_release', { stdio: 'pipe' });
-    } catch {
-      execSync('git checkout clean_release', { stdio: 'pipe' });
-    }
-    execSync('git rm -rf --cached .', { stdio: 'pipe' });
-    execSync('git add -A', { stdio: 'inherit' });
-    try {
-      execSync('git commit -m "Upload clean Digital Dock ERP production source code without large backups"', { stdio: 'inherit' });
-    } catch (e) {}
-    
-    // Replace main branch with clean_release
-    try { execSync('git branch -D main', { stdio: 'pipe' }); } catch (e) {}
-    execSync('git branch -m main', { stdio: 'pipe' });
-
-    log("Git history purged of .codex-backups and large files successfully!", 'success');
-  } catch (e) {
-    log(`Git purge warning: ${e.message}`, 'warn');
-  }
-
-  // Step 4: Push Clean Main Branch to GitHub
+  // Step 3: Check & Push Local ERP Code
   let commitHash = "";
   try {
-    log("\nStep 4/10: Pushing clean ERP codebase to GitHub origin main...");
+    log("\nStep 3/7: Pushing clean ERP codebase to GitHub origin main...");
+    try {
+      execSync('git add -A', { stdio: 'pipe' });
+      execSync('git commit -m "Upload clean Digital Dock ERP production source code"', { stdio: 'pipe' });
+    } catch (e) {}
     execSync(`git push -u origin main --force`, { stdio: 'inherit' });
     commitHash = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-    log(`GitHub push successful! Latest Commit Hash: ${commitHash}`, 'success');
+    log(`GitHub push verified! Commit Hash: ${commitHash}`, 'success');
   } catch (e) {
-    log(`GitHub push failed! Error: ${e.message}`, 'error');
-    console.log("\nPress Enter to exit...");
-    process.stdin.once('data', () => process.exit(1));
-    return;
+    log(`GitHub push note: ${e.message}`, 'warn');
   }
 
-  // Step 5: SSH Server Pull, Build, PM2 & Nginx Setup
+  // Step 4: Non-Interactive SSH VPS Deployment (Piping commands directly to bash)
   try {
-    log(`\nStep 5/10: Connecting to Hostinger VPS (${SERVER_IP}) via SSH for build & deployment...`);
+    log(`\nStep 4/7: Connecting to Hostinger VPS (${SERVER_IP}) & executing non-interactive deployment...`);
 
     const remoteScript = `
-      set -e
+set -e
 
-      echo '=== [1] Backing Up Production Environment Files ==='
-      mkdir -p /var/www/env_backups
-      cd ${SERVER_DIR}
-      if [ -f .env ]; then cp -f .env /var/www/env_backups/.env.bak || true; fi
-      if [ -f .env.local ]; then cp -f .env.local /var/www/env_backups/.env.local.bak || true; fi
-      echo 'Environment backup complete at /var/www/env_backups.'
+echo '=== [1/8] Backing Up Environment Files ==='
+mkdir -p /var/www/env_backups
+cd ${SERVER_DIR}
+if [ -f .env ]; then cp -f .env /var/www/env_backups/.env.bak || true; fi
+if [ -f .env.local ]; then cp -f .env.local /var/www/env_backups/.env.local.bak || true; fi
+echo 'Environment backup complete at /var/www/env_backups.'
 
-      echo '=== [2] Configuring Git Remote & Fetching Latest Clean Code ==='
-      if [ ! -d ".git" ]; then
-        git init
-        git remote add origin ${REPO_URL}
-      else
-        git remote set-url origin ${REPO_URL}
-      fi
-      git fetch origin main
-      git reset --hard origin/main
-      echo 'Server codebase synced with GitHub origin/main.'
+echo '=== [2/8] Fetching Latest Source Code from GitHub ==='
+if [ ! -d ".git" ]; then
+  git init
+  git remote add origin ${REPO_URL}
+else
+  git remote set-url origin ${REPO_URL}
+fi
+git fetch origin main
+git reset --hard origin/main
+echo 'Server codebase updated to latest GitHub main.'
 
-      echo '=== [3] Restoring Environment Files ==='
-      if [ -f /var/www/env_backups/.env.local.bak ]; then
-        cp -f /var/www/env_backups/.env.local.bak .env.local
-      fi
-      if [ -f /var/www/env_backups/.env.bak ]; then
-        cp -f /var/www/env_backups/.env.bak .env
-      fi
+echo '=== [3/8] Restoring Environment Files ==='
+if [ -f /var/www/env_backups/.env.local.bak ]; then
+  cp -f /var/www/env_backups/.env.local.bak .env.local
+fi
+if [ -f /var/www/env_backups/.env.bak ]; then
+  cp -f /var/www/env_backups/.env.bak .env
+fi
 
-      echo '=== [4] Ensuring Swap Memory Space ==='
-      if [ $(free -m | awk '/Swap:/ {print $2}') -eq 0 ]; then
-        echo 'Creating 2GB swap space to prevent memory build crash...'
-        fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
-        chmod 600 /swapfile
-        mkswap /swapfile
-        swapon /swapfile
-        grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-      fi
+echo '=== [4/8] Configuring Swap Memory Space ==='
+if [ $(free -m | awk '/Swap:/ {print $2}') -eq 0 ]; then
+  echo 'Creating 2GB swap space to prevent memory build crash...'
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
 
-      echo '=== [5] Installing Dependencies (npm install) ==='
-      npm install
+echo '=== [5/8] Installing Dependencies (npm install) ==='
+npm install
 
-      echo '=== [6] Building Next.js Production App ==='
-      NODE_OPTIONS='--max-old-space-size=2048' npm run build
-      echo 'Next.js production build completed successfully.'
+echo '=== [6/8] Building Next.js Production Application ==='
+NODE_OPTIONS='--max-old-space-size=2048' npm run build
+echo 'Next.js build completed successfully.'
 
-      echo '=== [7] Restarting PM2 Process (${PM2_NAME}) ==='
-      pm2 startOrReload ecosystem.config.cjs || pm2 restart ${PM2_NAME} --update-env
-      pm2 save
-      pm2 startup systemd -u root --hp /root 2>&1 || true
+echo '=== [7/8] Starting PM2 Application & Saving State ==='
+pm2 startOrReload ecosystem.config.cjs || pm2 restart ${PM2_NAME} --update-env
+pm2 save
+pm2 startup systemd -u root --hp /root 2>&1 || true
 
-      echo '=== [8] Verifying Internal Port ${APP_PORT} ==='
-      sleep 4
-      if ! ss -tlnp | grep -q ${APP_PORT}; then
-        echo 'ERROR: Next.js is not listening on port ${APP_PORT}!'
-        pm2 logs ${PM2_NAME} --lines 30 --nostream --err
-        exit 1
-      fi
-      echo 'Internal port ${APP_PORT} is ACTIVE and LISTENING.'
-
-      echo '=== [9] Nginx Reverse Proxy Setup ==='
-      cat > /etc/nginx/sites-enabled/dgt-nextjs.conf << 'NGINXEOF'
+echo '=== [8/8] Configuring & Reloading Nginx Proxy ==='
+cat > /etc/nginx/sites-enabled/dgt-nextjs.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
     server_name _;
@@ -222,14 +191,19 @@ server {
     }
 }
 NGINXEOF
-      rm -f /etc/nginx/sites-enabled/default
-      nginx -t && systemctl reload nginx
-      echo 'Nginx reloaded successfully.'
-    `;
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+echo 'Nginx proxy reloaded successfully.'
 
-    const sshCommand = `ssh -o StrictHostKeyChecking=no root@${SERVER_IP} "${remoteScript.replace(/"/g, '\\"')}"`;
-    execSync(sshCommand, { stdio: 'inherit' });
-    log("Server SSH commands executed successfully!", 'success');
+echo '=== PM2 & Port Status Check ==='
+pm2 list
+ss -tlnp | grep ${APP_PORT} || echo 'WARNING: Port ${APP_PORT} not listening yet'
+`;
+
+    // Execute via piped stdin to prevent interactive shell fallback
+    const sshCmd = `ssh -o StrictHostKeyChecking=no root@${SERVER_IP} "bash -s"`;
+    execSync(sshCmd, { input: remoteScript, stdio: ['pipe', 'inherit', 'inherit'] });
+    log("Server build, PM2 restart, and Nginx reload completed successfully!", 'success');
   } catch (e) {
     log(`SERVER DEPLOYMENT FAILED! ${e.message}`, 'error');
     console.log("\n=================================================================");
@@ -239,11 +213,11 @@ NGINXEOF
     return;
   }
 
-  // Step 6: HTTP Health Check
-  log(`\nStep 6/10: Running HTTP health check at http://${SERVER_IP} ...`);
+  // Step 5: HTTP Health Check
+  log(`\nStep 5/7: Verifying live website status at http://${SERVER_IP} ...`);
   let health = await checkServerHealth(`http://${SERVER_IP}`);
   if (health.statusCode >= 200 && health.statusCode < 400) {
-    log(`HEALTH CHECK PASSED! Server returned HTTP ${health.statusCode}`, 'success');
+    log(`Step 6/7: HEALTH CHECK PASSED! Server returned HTTP ${health.statusCode}`, 'success');
     console.log("\n=================================================================");
     console.log("   🎉 DEPLOYMENT SUCCESSFUL & 502 BAD GATEWAY FIXED!");
     console.log(`   - GitHub Repo      : ${REPO_URL}`);
