@@ -36,14 +36,9 @@ export function AuthTopControls({ lang }: { lang: SupportedLanguage }) {
     document.documentElement.dir = rtlLanguages.includes(next) ? "rtl" : "ltr";
     localStorage.setItem("erp_lang", next);
     document.cookie = `erp_lang=${encodeURIComponent(next)}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
-    
-    if (next === "en") {
-      document.cookie = `googtrans=/auto/en; Path=/;`;
-      document.cookie = `googtrans=/auto/en; Path=/; Domain=${window.location.hostname};`;
-    } else {
-      document.cookie = `googtrans=/auto/${next}; Path=/;`;
-      document.cookie = `googtrans=/auto/${next}; Path=/; Domain=${window.location.hostname};`;
-    }
+
+    // Clear legacy Google Translate cookies if present
+    document.cookie = "googtrans=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
     
     window.location.reload();
   }

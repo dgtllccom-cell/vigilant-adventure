@@ -86,7 +86,7 @@ function columnPayload(translations: TranslationMap) {
     pashto_text: translations.ps,
     language_texts: translations,
     translation_status: "complete",
-    translated_by_engine: process.env.GEMINI_API_KEY ? "gemini" : "local_fallback",
+    translated_by_engine: "local_dictionary",
     translated_at: new Date().toISOString()
   };
 }

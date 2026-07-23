@@ -925,6 +925,12 @@ export const sidebarTree: SidebarNode[] = [
             roles: ["super_admin"]
           },
           {
+            key: "settings-translations-management",
+            labelKey: "nav.translations_management",
+            href: "/dashboard/settings/translations" as Route,
+            roles: ["super_admin"]
+          },
+          {
             key: "settings-form-settings",
             labelKey: "nav.form_settings",
             iconKey: "palette",

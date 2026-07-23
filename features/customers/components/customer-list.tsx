@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { Building2, Search, Eye, PencilLine, Printer, Trash2, Users, UserCheck, UserMinus, Plus, Mail, MessageSquare, MoreHorizontal, Phone, FileText, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UnifiedActionMenu } from "@/components/ui/unified-action-menu";
 import { DetailDrawer } from "@/components/ui/detail-drawer";
 import { CustomerProfile } from "./customer-profile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -618,62 +619,12 @@ export function CustomerList({ lang }: { lang: SupportedLanguage }) {
                       </td>
                       <td className="px-5 py-3.5 text-center">
                         <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                          <div className="relative">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setOpenMenuId(openMenuId === c.id ? null : c.id)}
-                              className="h-7 w-7 text-slate-500 hover:bg-slate-100 rounded-full"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                            {openMenuId === c.id && (
-                              <div className="absolute right-0 mt-1 w-36 rounded-lg border bg-white shadow-lg py-1 z-50 animate-in fade-in slide-in-from-top-1 duration-100 text-left">
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    setSelectedCustomerId(c.id);
-                                  }}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Eye className="h-3.5 w-3.5 text-slate-400" />
-                                  View Profile
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    router.push(`/dashboard/settings/customers/setup?customerId=${c.id}` as Route);
-                                  }}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <PencilLine className="h-3.5 w-3.5 text-blue-500" />
-                                  Edit Customer
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    handlePrint(c);
-                                  }}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Printer className="h-3.5 w-3.5 text-amber-500" />
-                                  Print Profile
-                                </button>
-                                <div className="border-t my-1" />
-                                <button
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    void handleDelete(c.id, c.customer_name);
-                                  }}
-                                  className="w-full text-left px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-rose-500" />
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          <UnifiedActionMenu
+                            onView={() => setSelectedCustomerId(c.id)}
+                            onEdit={() => router.push(`/dashboard/settings/customers/setup?customerId=${c.id}` as Route)}
+                            onPrint={() => handlePrint(c)}
+                            onDelete={() => void handleDelete(c.id, c.customer_name)}
+                          />
                         </div>
                       </td>
                     </tr>

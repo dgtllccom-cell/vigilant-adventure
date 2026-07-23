@@ -808,10 +808,7 @@ function RowActionsMenu({
   onAccept,
   onTransfer,
   onPrint,
-  onPdf,
-  isSuperAdmin,
-  isCountryAdmin,
-  isBranchAdmin
+  onPdf
 }: {
   report: any;
   onSelect: () => void;
@@ -827,85 +824,22 @@ function RowActionsMenu({
   const router = useRouter();
 
   return (
-    <ViewportActionMenu
-      ariaLabel="Row actions"
-      buttonClassName="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:bg-slate-900 shadow-sm text-slate-700 dark:text-slate-300"
-      trigger={<MoreVertical className="h-3.5 w-3.5" />}
-      menuClassName="border-slate-200 bg-white text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 z-[100]"
-    >
-      {(close) => (
-        <div className="py-1 min-w-[160px]">
-          <button
-            type="button"
-            onClick={() => { close(); onSelect(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <Eye className="h-3.5 w-3.5 text-blue-600" /> View Details
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              close();
-              if (onEdit) onEdit();
-              else router.push(`/dashboard/purchase/new-purchase-booking-order?id=${encodeURIComponent(report.id)}&purchaseOrderNo=${encodeURIComponent(report.purchaseBookingOrderNumber)}`);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <Edit3 className="h-3.5 w-3.5 text-amber-600" /> Edit Booking
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); if (onAccept) onAccept(); else onSelect(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <CheckCircle className="h-3.5 w-3.5 text-rose-600" /> Accept Bill
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); if (onTransfer) onTransfer(); else onSelect(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <ArrowRight className="h-3.5 w-3.5 text-emerald-600" /> Transfer Bill
-          </button>
-          <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
-          <button
-            type="button"
-            onClick={() => { close(); if (onPrint) onPrint(); else openReportWindow(report, true); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <Printer className="h-3.5 w-3.5 text-slate-600" /> Print
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); if (onPdf) onPdf(); else openReportWindow(report, false); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <DownloadActionIcon className="h-3.5 w-3.5 text-indigo-600" /> Export PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); alert(`Email initiated for Booking: ${report.purchaseBookingOrderNumber}`); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <FileText className="h-3.5 w-3.5 text-teal-600" /> Email
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); alert(`WhatsApp initiated for Booking: ${report.purchaseBookingOrderNumber}`); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <FileText className="h-3.5 w-3.5 text-emerald-600" /> WhatsApp
-          </button>
-          <button
-            type="button"
-            onClick={() => { close(); onSelect(); }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-          >
-            <Clock className="h-3.5 w-3.5 text-purple-600" /> History
-          </button>
-        </div>
-      )}
-    </ViewportActionMenu>
+    <UnifiedActionMenu
+      onView={onSelect}
+      onEdit={() => {
+        if (onEdit) onEdit();
+        else router.push(`/dashboard/purchase/new-purchase-booking-order?id=${encodeURIComponent(report.id)}&purchaseOrderNo=${encodeURIComponent(report.purchaseBookingOrderNumber)}`);
+      }}
+      onPrint={onPrint || (() => openReportWindow(report, true))}
+      onExportPdf={onPdf || (() => openReportWindow(report, false))}
+      onEmail={() => alert(`Email initiated for Booking: ${report.purchaseBookingOrderNumber}`)}
+      onWhatsApp={() => alert(`WhatsApp initiated for Booking: ${report.purchaseBookingOrderNumber}`)}
+      customItems={[
+        { label: "Accept Bill", icon: <CheckCircle className="h-4 w-4 text-rose-500" />, onClick: () => { if (onAccept) onAccept(); else onSelect(); } },
+        { label: "Transfer Bill", icon: <ArrowRight className="h-4 w-4 text-emerald-500" />, onClick: () => { if (onTransfer) onTransfer(); else onSelect(); } },
+        { label: "History Timeline", icon: <Clock className="h-4 w-4 text-purple-500" />, onClick: onSelect }
+      ]}
+    />
   );
 }
 

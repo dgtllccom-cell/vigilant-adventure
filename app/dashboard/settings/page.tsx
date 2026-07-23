@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Route } from "next";
-import { Anchor, Building2, Landmark, Mail, MapPin, Settings, Ship, SlidersHorizontal, Warehouse, Globe } from "lucide-react";
+import { Anchor, Building2, Landmark, Mail, MapPin, Settings, Ship, SlidersHorizontal, Warehouse, Globe, Globe2 } from "lucide-react";
 
 const settingsItems = [
   {
@@ -50,6 +50,12 @@ const settingsItems = [
     description: "Manage official branch email accounts, SMTP settings, passwords, and connection status.",
     href: "/dashboard/settings/email-accounts" as Route,
     icon: Mail
+  },
+  {
+    title: "Local Translation Management",
+    description: "Super Admin offline 5-language dictionary manager (English, Urdu, Pashto, Farsi, Arabic).",
+    href: "/dashboard/settings/translations" as Route,
+    icon: Globe2
   }
 ];
 

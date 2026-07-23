@@ -193,6 +193,7 @@ export type UiKey =
   | "nav.template_green"
   | "nav.template_gold"
   | "nav.template_cyan"
+  | "nav.translations_management"
   | "nav.pakistan"
   | "nav.afghanistan"
   | "nav.india"
@@ -554,6 +555,7 @@ const en: Dict = {
   "nav.template_green": "Green",
   "nav.template_gold": "Gold",
   "nav.template_cyan": "Cyan",
+  "nav.translations_management": "Local Translation Management",
   "nav.pakistan": "Pakistan",
   "nav.afghanistan": "Afghanistan",
   "nav.india": "India",
@@ -1847,7 +1849,8 @@ const dictionaries: Record<SupportedLanguage, Dict> = {
   ps
 };
 
-export function t(lang: SupportedLanguage, key: string) {
+export function t(lang: SupportedLanguage, key: string, defaultValue?: string) {
   const dictKey = key as UiKey;
-  return dictionaries[lang]?.[dictKey] ?? en[dictKey] ?? key;
+  return dictionaries[lang]?.[dictKey] ?? en[dictKey] ?? defaultValue ?? key;
 }
+

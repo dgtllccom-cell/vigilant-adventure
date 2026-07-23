@@ -72,14 +72,6 @@ async function resolveEffectiveScope(req: { countryId?: string | null; countryBr
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    try {
-      const fs = await import("node:fs");
-      fs.appendFileSync(
-        "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-        `\n[GET /api/erp/purchases/orders] Time: ${new Date().toISOString()}\nParams: ${searchParams.toString()}\n`,
-        "utf8"
-      );
-    } catch (_) {}
     const session = await requireErpSession();
 
     const query = listQuerySchema.parse({
@@ -99,12 +91,6 @@ export async function GET(request: NextRequest) {
     });
 
     const supabase = await createApiSupabaseClient();
-    const countRes = await supabase.from("purchase_orders").select("id", { count: "exact", head: true }).is("deleted_at", null);
-    const loadingRes = await supabase.from("purchase_loading_records").select("id", { count: "exact", head: true }).is("deleted_at", null);
-    console.log("=== API DIAGNOSTIC ===");
-    console.log("Session:", { userId: session.userId, isSuperAdmin: session.isSuperAdmin, countryIds: session.countryIds, countryBranchIds: session.countryBranchIds, cityBranchIds: session.cityBranchIds });
-    console.log("Query params:", query);
-    console.log("DB count orders:", countRes.count, "loading:", loadingRes.count, "orders_err:", countRes.error?.message, "loading_err:", loadingRes.error?.message);
     let q = supabase
       .from("purchase_orders")
       .select(`
@@ -199,25 +185,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.json();
-    if (rawBody && typeof rawBody === "object" && "clientLog" in rawBody) {
-      try {
-        const fs = await import("node:fs");
-        fs.appendFileSync(
-          "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-          `\n[CLIENT LOG] Time: ${new Date().toISOString()}\nMessage: ${rawBody.clientLog}\n`,
-          "utf8"
-        );
-      } catch (_) {}
-      return apiOk({});
-    }
-    try {
-      const fs = await import("node:fs");
-      fs.appendFileSync(
-        "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-        `\n[POST /api/erp/purchases/orders] Time: ${new Date().toISOString()}\nBody: ${JSON.stringify(rawBody, null, 2)}\n`,
-        "utf8"
-      );
-    } catch (_) {}
     const session = await requireErpSession();
     const body = purchaseOrderCreateSchema.parse(rawBody);
 
@@ -352,14 +319,6 @@ export async function POST(request: NextRequest) {
       );
     } catch (e: any) {
       const errMsg = String(e.message || e);
-      try {
-        const fs = await import("node:fs");
-        fs.appendFileSync(
-          "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-          `\n[POST purchase_orders INSERT ERROR] Time: ${new Date().toISOString()}\nError: ${errMsg}\nPayload: ${JSON.stringify(payload, null, 2)}\n`,
-          "utf8"
-        );
-      } catch (_) {}
       if (errMsg.includes("schema cache") || errMsg.includes("column") || errMsg.includes("relation") || errMsg.includes("landed_cost") || errMsg.includes("currency")) {
         await ensurePurchaseSchemaAndEnums();
         try {
@@ -367,14 +326,6 @@ export async function POST(request: NextRequest) {
             supabase.from("purchase_orders").insert(payload).select("id, purchase_order_no").single()
           );
         } catch (retryErr: any) {
-          try {
-            const fs = await import("node:fs");
-            fs.appendFileSync(
-              "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-              `\n[POST purchase_orders RETRY INSERT ERROR] Time: ${new Date().toISOString()}\nError: ${retryErr.message || String(retryErr)}\n`,
-              "utf8"
-            );
-          } catch (_) {}
           return apiError("INSERT_FAILED", retryErr.message || String(retryErr), 400);
         }
       } else {
@@ -452,244 +403,8 @@ export async function POST(request: NextRequest) {
       purchaseOrderNo: (inserted as any).purchase_order_no as string
     });
   } catch (error: any) {
-    try {
-      const fs = await import("node:fs");
-      fs.appendFileSync(
-        "C:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/api-diagnostics-output.txt",
-        `\n[POST purchase_orders GLOBAL ERROR] Time: ${new Date().toISOString()}\nError: ${error.message || String(error)}\nStack: ${error.stack}\n`,
-        "utf8"
-      );
-    } catch (_) {}
     return handleApiError(error);
   }
 }
 
-async function getLedgerIdByCode(supabase: any, code: string) {
-  const lookup = String(code || "").trim();
-  if (!lookup) return null;
 
-  const { data, error } = await supabase
-    .from("ledgers")
-    .select("id")
-    .eq("code", lookup)
-    .is("deleted_at", null)
-    .maybeSingle();
-  if (!error && data?.id) return data.id;
-
-  const { data: account } = await supabase
-    .from("enterprise_accounts")
-    .select("id, code, account_number, manual_reference_number, customer_number")
-    .or(`code.eq."${lookup}",account_number.eq."${lookup}",manual_reference_number.eq."${lookup}",customer_number.eq."${lookup}"`)
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  if (!account?.id) return null;
-
-  const { data: ledgerByAccount } = await supabase
-    .from("ledgers")
-    .select("id")
-    .eq("enterprise_account_id", account.id)
-    .is("deleted_at", null)
-    .maybeSingle();
-  if (ledgerByAccount?.id) return ledgerByAccount.id;
-
-  const accountCodes = [account.code, account.account_number, account.manual_reference_number, account.customer_number].filter(Boolean);
-  if (!accountCodes.length) return null;
-
-  const { data: ledgerByCode } = await supabase
-    .from("ledgers")
-    .select("id")
-    .in("code", accountCodes)
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-
-  return ledgerByCode?.id ?? null;
-}
-
-async function resolveOrCreateCashLedger(
-  supabase: any,
-  input: {
-    cashAccountCode?: string;
-    currencyCode: string;
-    countryId: string | null;
-    countryBranchId: string | null;
-    cityBranchId: string | null;
-    userId: string;
-  }
-) {
-  const code = (input.cashAccountCode || "CASH-001").trim();
-  
-  // 1. Try to find ledger by code
-  const ledgerId = await getLedgerIdByCode(supabase, code);
-  if (ledgerId) return ledgerId;
-
-  // 2. Try to find any active ledger containing "cash" (case insensitive)
-  const { data: cashL } = await supabase
-    .from("ledgers")
-    .select("id")
-    .ilike("name", "%cash%")
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (cashL?.id) return cashL.id;
-
-  // 3. Try to find any active ledger containing "bank" (case insensitive)
-  const { data: bankL } = await supabase
-    .from("ledgers")
-    .select("id")
-    .ilike("name", "%bank%")
-    .is("deleted_at", null)
-    .limit(1)
-    .maybeSingle();
-  if (bankL?.id) return bankL.id;
-
-  // 4. Create standard fallback Cash Account and Ledger
-  const scope = input.cityBranchId 
-    ? "city_branch" 
-    : input.countryBranchId 
-      ? "main_branch" 
-      : "super_admin";
-
-  const { data: existingAccount } = await supabase
-    .from("enterprise_accounts")
-    .select("id")
-    .eq("code", "CASH-001")
-    .is("deleted_at", null)
-    .maybeSingle();
-
-  let accountId = existingAccount?.id;
-
-  if (!accountId) {
-    // Generate serials and codes
-    let branchCode = "BRANCH";
-    let branchPrefix = "BR";
-    let countryPrefix = "CT";
-
-    if (input.cityBranchId) {
-      const { data: cb } = await supabase
-        .from("city_branches")
-        .select("code, city_name")
-        .eq("id", input.cityBranchId)
-        .maybeSingle();
-      if (cb) {
-        branchCode = cb.code || cb.city_name || "CITY";
-        branchPrefix = cb.city_name || cb.code || "CITY";
-      }
-    } else if (input.countryBranchId) {
-      const { data: cb } = await supabase
-        .from("country_branches")
-        .select("code, name")
-        .eq("id", input.countryBranchId)
-        .maybeSingle();
-      if (cb) {
-        branchCode = cb.code || cb.name || "MAIN";
-        branchPrefix = "MAIN";
-      }
-    }
-
-    if (input.countryId) {
-      const { data: c } = await supabase
-        .from("countries")
-        .select("name, iso2")
-        .eq("id", input.countryId)
-        .maybeSingle();
-      if (c) {
-        countryPrefix = c.name?.toLowerCase().includes("united arab emirates") ? "UAE" : (c.iso2 || "CT");
-      }
-    }
-
-    // Count total enterprise accounts
-    const { count: totalCount } = await supabase
-      .from("enterprise_accounts")
-      .select("id", { count: "exact", head: true });
-
-    // Count branch-specific enterprise accounts
-    let branchQuery = supabase
-      .from("enterprise_accounts")
-      .select("id", { count: "exact", head: true })
-      .eq("scope", scope)
-      .is("deleted_at", null);
-    if (input.countryId) branchQuery = branchQuery.eq("country_id", input.countryId);
-    if (input.countryBranchId) branchQuery = branchQuery.eq("country_branch_id", input.countryBranchId);
-    if (input.cityBranchId) branchQuery = branchQuery.eq("city_branch_id", input.cityBranchId);
-    const { count: branchCount } = await branchQuery;
-
-    // Count country-specific enterprise accounts
-    let countryQuery = supabase
-      .from("enterprise_accounts")
-      .select("id", { count: "exact", head: true })
-      .is("deleted_at", null);
-    if (input.countryId) countryQuery = countryQuery.eq("country_id", input.countryId);
-    const { count: countryCount } = await countryQuery;
-
-    const accountSerialNumber = Number(totalCount ?? 0) + 1;
-    const branchAccountSequence = Number(branchCount ?? 0) + 1;
-    const countrySerialNumber = `${countryPrefix.toUpperCase()}-${String(Number(countryCount ?? 0) + 1).padStart(6, "0")}`;
-    const branchSerialNumber = `${countryPrefix.toUpperCase()}-${branchPrefix.slice(0, 3).toUpperCase()}-${String(branchAccountSequence).padStart(6, "0")}`;
-
-    const { data: newAccount, error: accError } = await supabase
-      .from("enterprise_accounts")
-      .insert({
-        scope,
-        country_id: input.countryId,
-        country_branch_id: input.countryBranchId,
-        city_branch_id: input.cityBranchId,
-        code: "CASH-001",
-        account_number: "CASH-001",
-        customer_number: "CUST-CASH-001",
-        account_serial_number: accountSerialNumber,
-        country_serial_number: countrySerialNumber,
-        branch_serial_number: branchSerialNumber,
-        branch_code: branchCode.slice(0, 6).toUpperCase(),
-        branch_account_sequence: branchAccountSequence,
-        name: "General Cash Account",
-        kind: "asset",
-        currency: input.currencyCode || "USD",
-        status: "active",
-        is_control_account: false,
-        opening_balance: 0,
-        current_balance: 0,
-        creation_date: new Date().toISOString(),
-        created_by: input.userId
-      })
-      .select("id")
-      .single();
-
-    if (accError) {
-      console.error("Failed to create fallback cash enterprise account:", accError);
-      throw new Error(`Failed to create fallback cash account: ${accError.message}`);
-    }
-    accountId = newAccount.id;
-  }
-
-  // Create the ledger record bound to this enterprise account
-  const { data: newLedger, error: ledgerError } = await supabase
-    .from("ledgers")
-    .insert({
-      scope,
-      country_id: input.countryId,
-      country_branch_id: input.countryBranchId,
-      city_branch_id: input.cityBranchId,
-      enterprise_account_id: accountId,
-      code: "CASH-001",
-      name: "General Cash Account",
-      currency: input.currencyCode || "USD",
-      opening_balance: 0,
-      current_balance: 0,
-      debit_total: 0,
-      credit_total: 0,
-      normal_balance: "debit",
-      is_active: true,
-      created_by: input.userId
-    })
-    .select("id")
-    .single();
-
-  if (ledgerError) {
-    console.error("Failed to create fallback cash ledger:", ledgerError);
-    throw new Error(`Failed to create fallback cash ledger: ${ledgerError.message}`);
-  }
-
-  return newLedger.id;
-}

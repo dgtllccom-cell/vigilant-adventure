@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
         ar: translations.ar
       },
       translation_status: "complete",
-      translated_by_engine: process.env.GEMINI_API_KEY ? "gemini" : "local_fallback",
+      translated_by_engine: "local_dictionary",
       translated_at: new Date().toISOString(),
       source: body.source,
       corrected_by: body.source === "manual" ? session.userId : null,

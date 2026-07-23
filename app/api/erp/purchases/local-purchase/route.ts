@@ -5,219 +5,12 @@ import { requireErpSession } from "@/lib/auth/session";
 import { authorizeApiScope } from "@/lib/api/scope-middleware";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { z } from "zod";
-import postgres from "postgres";
 
-const migrationSql = `
-CREATE TABLE IF NOT EXISTS local_purchases (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid REFERENCES companies(id),
-  country_id uuid REFERENCES countries(id),
-  country_branch_id uuid REFERENCES country_branches(id),
-  city_branch_id uuid REFERENCES city_branches(id),
-  goods_id uuid REFERENCES goods(id),
-  purchase_account_no text,
-  sales_account_no text,
-  broker_account_no text,
-  brand text,
-  size text,
-  chassis_code text,
-  goods_name text NOT NULL,
-  supplier_name text,
-  payment_mode text DEFAULT 'Cash',
-  shipping_mode text DEFAULT 'Local Market',
-  origin_country_id uuid REFERENCES countries(id),
-  origin_country_name text DEFAULT 'Local',
-  advance_percentage numeric(5, 2) DEFAULT 0,
-  advance_amount numeric(18, 4) DEFAULT 0,
-  remaining_balance numeric(18, 4) DEFAULT 0,
-  warehouse_name text,
-  warehouse_plot_no text,
-  transfer_date text,
-  truck_no text,
-  driver_name text,
-  quantity_name text NOT NULL DEFAULT 'Bags',
-  quantity_kgs numeric(18, 4) NOT NULL DEFAULT 0,
-  total_gross_weight numeric(18, 4) NOT NULL DEFAULT 0,
-  empty_kgs numeric(18, 4) NOT NULL DEFAULT 0,
-  net_weight numeric(18, 4) NOT NULL DEFAULT 0,
-  divide_kgs numeric(18, 4) NOT NULL DEFAULT 0,
-  numbers numeric(18, 4) NOT NULL DEFAULT 0,
-  rate_type text NOT NULL DEFAULT 'per_kg',
-  purchase_rate numeric(18, 4) NOT NULL DEFAULT 0,
-  purchase_currency text NOT NULL DEFAULT 'USD',
-  exchange_rate numeric(18, 8) NOT NULL DEFAULT 1,
-  local_currency text NOT NULL DEFAULT 'PKR',
-  purchase_cost numeric(18, 4) NOT NULL DEFAULT 0,
-  apply_tax text DEFAULT 'No',
-  tax_type text DEFAULT 'VAT',
-  tax_percentage numeric(5, 2) DEFAULT 0,
-  tax_amount numeric(18, 4) DEFAULT 0,
-  final_cost numeric(18, 4) NOT NULL DEFAULT 0,
-  status text NOT NULL DEFAULT 'draft',
-  manual_bill_no text,
-  journal_serial_no text,
-  country_serial_no text,
-  branch_serial_no text,
-  accepted_at timestamptz,
-  accepted_by uuid REFERENCES profiles(id),
-  transferred_at timestamptz,
-  journal_entry_id uuid,
-  roznamcha_entry_id uuid,
-  goods_receipt_type text,
-  goods_receipt_status text DEFAULT 'Pending Receipt',
-  goods_receipt_details jsonb DEFAULT '{}'::jsonb,
-  goods_received_at timestamptz,
-  created_by uuid REFERENCES profiles(id),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  deleted_at timestamptz
-);
 
-ALTER TABLE local_purchases ENABLE ROW LEVEL SECURITY;
+// NOTE: Schema for local_purchases table is managed via Supabase migrations
+// (see supabase/migrations/0076_local_purchases.sql and the main schema).
+// Self-healing runtime migrations have been removed for production performance.
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies 
-    WHERE tablename = 'local_purchases' 
-    AND policyname = 'local_purchases_all'
-  ) THEN
-    CREATE POLICY local_purchases_all ON local_purchases FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END
-$$;
-`;
-
-async function ensureTableExists() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) return;
-
-  const sqlClient = postgres(dbUrl, { max: 1, prepare: false });
-  try {
-    const res = await sqlClient`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'local_purchases'
-      );
-    `;
-    if (!res[0]?.exists) {
-      await sqlClient.unsafe(migrationSql);
-      console.log("local_purchases table created through self-healing migration.");
-    } else {
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS purchase_account_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS sales_account_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS broker_account_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS brand text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS size text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS chassis_code text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS payment_mode text DEFAULT 'Cash';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS shipping_mode text DEFAULT 'Local Market';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS origin_country_id uuid;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS origin_country_name text DEFAULT 'Local';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS advance_percentage numeric(5, 2) DEFAULT 0;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS advance_amount numeric(18, 4) DEFAULT 0;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS remaining_balance numeric(18, 4) DEFAULT 0;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS warehouse_name text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS warehouse_plot_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS transfer_date text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS truck_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS driver_name text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS lot_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS apply_tax text DEFAULT 'No';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS tax_type text DEFAULT 'VAT';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS tax_percentage numeric(5, 2) DEFAULT 0;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS tax_amount numeric(18, 4) DEFAULT 0;
-      `;
-      // Phase 1: Workflow status & serial number columns
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'draft';
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS manual_bill_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS journal_serial_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS country_serial_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS branch_serial_no text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS accepted_at timestamptz;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS accepted_by uuid;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS transferred_at timestamptz;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS journal_entry_id uuid;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS roznamcha_entry_id uuid;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS debit_journal_serial text;
-      `;
-      await sqlClient`
-        ALTER TABLE local_purchases ADD COLUMN IF NOT EXISTS credit_journal_serial text;
-      `;
-    }
-  } catch (err) {
-    console.error("Auto migration check failed:", err);
-  } finally {
-    await sqlClient.end();
-  }
-}
 
 const listQuerySchema = z.object({
   countryId: z.string().uuid().optional(),
@@ -275,7 +68,6 @@ const localPurchaseCreateSchema = z.object({
 
 export async function GET(request: NextRequest) {
   try {
-    await ensureTableExists();
     const session = await requireErpSession();
     const url = new URL(request.url);
 
@@ -331,7 +123,6 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await ensureTableExists();
     const session = await requireErpSession();
     const body = await request.json();
     const payload = localPurchaseCreateSchema.parse(body);
@@ -425,7 +216,6 @@ const localGoodsReceiptSchema = z.object({
 
 export async function PATCH(request: NextRequest) {
   try {
-    await ensureTableExists();
     const session = await requireErpSession();
     const payload = localGoodsReceiptSchema.parse(await request.json());
     const supabase = createSupabaseAdminClient();

@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest } from "next/server";
-import fs from "fs";
 import { apiCreated, apiOk, handleApiError } from "@/lib/api/response";
 import { roznamchaPostingSchema } from "@/lib/api/erp-validation";
 import { authorizeApiScope, getScopeFromSearchParams } from "@/lib/api/scope-middleware";
@@ -604,6 +603,38 @@ export async function POST(request: NextRequest) {
       throw new Error("Duplicate ledger selection is not allowed. Each transaction line must post to a different ledger.");
     }
 
+    // ── Balance Validation: multi-line entries must be balanced (DR = CR) ──
+    if (body.mode === "post" && body.lines.length > 1) {
+      const debitTotal = body.lines.reduce((sum, line) => sum + toNumber(line.debit), 0);
+      const creditTotal = body.lines.reduce((sum, line) => sum + toNumber(line.credit), 0);
+      const difference = Math.round((debitTotal - creditTotal) * 10000) / 10000;
+      if (difference !== 0) {
+        throw new Error(`Entry is not balanced. Debit total: ${debitTotal.toFixed(4)}, Credit total: ${creditTotal.toFixed(4)}, Difference: ${difference.toFixed(4)}`);
+      }
+    }
+
+    // ── Idempotency Guard: prevent duplicate posting from same source ──
+    if (body.mode === "post") {
+      const sourceModule = (body as any).sourceModule;
+      const sourceTransactionType = (body as any).sourceTransactionType;
+      if (sourceModule && sourceTransactionType) {
+        const admin = createSupabaseAdminClient() as any;
+        const { data: existingEntries } = await admin
+          .from("roznamcha_entries")
+          .select("id")
+          .eq("source_module", sourceModule)
+          .eq("source_transaction_type", sourceTransactionType)
+          .eq("voucher_no", body.voucherNo)
+          .is("deleted_at", null)
+          .neq("status", "cancelled")
+          .limit(1);
+
+        if (existingEntries && existingEntries.length > 0) {
+          throw new Error("A roznamcha entry already exists for this transaction. Duplicate posting is not allowed.");
+        }
+      }
+    }
+
     authorizeApiScope(session, {
       resource: "roznamcha",
       action: body.mode === "post" ? "post" : "create",
@@ -654,18 +685,7 @@ export async function POST(request: NextRequest) {
       postingPlan
     });
   } catch (error: any) {
-    console.error("ROZNAMCHA_POST_ERROR:", error);
-    try {
-      const errInfo = {
-        message: error?.message,
-        stack: error?.stack,
-        time: new Date().toISOString(),
-        errorJson: JSON.stringify(error, Object.getOwnPropertyNames(error))
-      };
-      fs.writeFileSync("c:/Users/dgtll/OneDrive/Documents/ACCOUNTS.DGT.LLC/error_log.txt", JSON.stringify(errInfo, null, 2), "utf8");
-    } catch (fsErr) {
-      console.error("Failed to write error to file:", fsErr);
-    }
+    console.error("ROZNAMCHA_POST_ERROR:", error?.message);
     return handleApiError(error);
   }
 }

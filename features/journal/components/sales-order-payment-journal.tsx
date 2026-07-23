@@ -46,6 +46,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ViewportActionMenu } from "@/components/ui/viewport-action-menu";
+import { UnifiedActionMenu } from "@/components/ui/unified-action-menu";
 import { openPurchaseA4ReportWindow, type PurchaseReportData } from "@/lib/reports/open-purchase-a4-report-window";
 import { PaymentEditModal } from "./payment-edit-modal";
 import { t, tData, type LanguageCode } from "../../i18n/purchase-journal-translations";
@@ -3587,84 +3588,53 @@ export function SalesOrderPaymentJournal({ mode = "advance" }: { mode?: PaymentM
           </td>
           {/* 13. Action */}
           <td className="px-3 py-4 align-middle border-b border-slate-100 dark:border-slate-800">
-            <div className="flex items-center gap-1.5 justify-end">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setViewingRow(row);
-                }}
-                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-[10px] font-black uppercase tracking-wide text-blue-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-                title="Open full bill audit report"
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Open Full Bill
-              </button>
-              <div className="relative" onClick={(e) => e.stopPropagation()}>
-                <ViewportActionMenu
-                  ariaLabel="Row actions"
-                  buttonClassName="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 transition text-slate-500"
-                  trigger={<MoreVertical className="h-3.5 w-3.5" />}
-                  menuClassName="font-semibold p-0 w-48 shadow-lg ring-1 ring-black ring-opacity-5 overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                >
-                  {(close) => (
-                    <div className="py-1">
-                      {activeMode !== "advance_completed" && (
-                        <button className="flex w-full items-center px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-350 dark:hover:bg-slate-800 transition font-bold" onClick={() => {
-                          try {
-                            logClientError(`Click Payment Entry. row.id: ${row.id}`);
-                            selectOrder(row.id);
-                            close();
-                          } catch (e: any) {
-                            logClientError(`Error in Payment Entry click: ${e.stack || e.message || String(e)}`);
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              <UnifiedActionMenu
+                onView={() => setViewingRow(row)}
+                onPrint={() => handleOpenA4PDF(row, true)}
+                onExportPdf={() => handleOpenA4PDF(row, false)}
+                customItems={[
+                  ...(activeMode !== "advance_completed"
+                    ? [
+                        {
+                          label: "Payment Entry",
+                          icon: <WalletCards className="h-4 w-4 text-emerald-500" />,
+                          onClick: () => {
+                            try {
+                              logClientError(`Click Payment Entry. row.id: ${row.id}`);
+                              selectOrder(row.id);
+                            } catch (e: any) {
+                              logClientError(`Error in Payment Entry click: ${e.stack || e.message || String(e)}`);
+                            }
                           }
-                        }}>
-                          <WalletCards className="mr-2.5 h-4 w-4 text-slate-500" /> Payment Entry
-                        </button>
-                      )}
-                      {activeMode === "advance" && isPosted && (
-                        <button className="flex w-full items-center px-4 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 transition" onClick={() => { 
-                          close();
-                          router.push(`/dashboard/purchase/loading-form`);
-                        }}>
-                          <Truck className="mr-2.5 h-4 w-4 text-blue-600 dark:text-blue-400" /> Transfer to Loading
-                        </button>
-                      )}
-                      <button className="flex w-full items-center px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition" onClick={() => { setViewingRow(row); close(); }}>
-                        <Eye className="mr-2.5 h-4 w-4 text-blue-600" /> Open Full Bill
-                      </button>
-                      <button className="flex w-full items-center px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition" onClick={() => { handleOpenA4PDF(row, true); close(); }}>
-                        <Printer className="mr-2.5 h-4 w-4 text-slate-500" /> Print Statement
-                      </button>
-                      <button className="flex w-full items-center px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition" onClick={() => { handleOpenA4PDF(row, false); close(); }}>
-                        <FileText className="mr-2.5 h-4 w-4 text-slate-500" /> View Statement
-                      </button>
-                      <button className="flex w-full items-center px-4 py-2.5 text-xs text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition" onClick={() => {
-                        try {
-                          logClientError(`Click Show Payment History. row.id: ${row.id}`);
-                          setExpandedIds((prev) => ({ ...prev, [row.id]: !prev[row.id] }));
-                          close();
-                        } catch (e: any) {
-                          logClientError(`Error in Show Payment History click: ${e.stack || e.message || String(e)}`);
                         }
-                      }}>
-                        {isExpanded ? <XCircle className="mr-2.5 h-4 w-4 text-slate-500" /> : <Plus className="mr-2.5 h-4 w-4 text-slate-500" />} {isExpanded ? "Hide Payment History" : "Show Payment History"}
-                      </button>
-                      {activeMode === "advance_completed" && (
-                        <>
-                          <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
-                          <button className="flex w-full items-center px-4 py-2.5 text-xs text-indigo-700 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/30 transition" onClick={() => { 
-                            close();
-                            router.push(`/dashboard/journal/sales-order-payment/advance?salesOrderNo=${encodeURIComponent(row.sales_order_no)}`);
-                          }}>
-                            <RefreshCw className="mr-2.5 h-4 w-4 text-indigo-500" /> Revert & Edit Advance
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </ViewportActionMenu>
-              </div>
+                      ]
+                    : []),
+                  ...(activeMode === "advance" && isPosted
+                    ? [
+                        {
+                          label: "Transfer to Loading",
+                          icon: <Truck className="h-4 w-4 text-blue-500" />,
+                          onClick: () => router.push(`/dashboard/purchase/loading-form`)
+                        }
+                      ]
+                    : []),
+                  {
+                    label: isExpanded ? "Hide Payment History" : "Show Payment History",
+                    icon: isExpanded ? <XCircle className="h-4 w-4 text-slate-500" /> : <Plus className="h-4 w-4 text-slate-500" />,
+                    onClick: () => setExpandedIds((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
+                  },
+                  ...(activeMode === "advance_completed"
+                    ? [
+                        {
+                          label: "Revert & Edit Advance",
+                          icon: <RefreshCw className="h-4 w-4 text-indigo-500" />,
+                          onClick: () => router.push(`/dashboard/journal/sales-order-payment/advance?salesOrderNo=${encodeURIComponent(row.sales_order_no)}`)
+                        }
+                      ]
+                    : [])
+                ]}
+              />
             </div>
           </td>
         </tr>
