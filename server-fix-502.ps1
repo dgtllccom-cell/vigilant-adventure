@@ -13,9 +13,11 @@ Write-Host "  502 Bad Gateway - Direct Code Upload & Server Recovery" -Foregroun
 Write-Host "  Target: $SERVER" -ForegroundColor Yellow
 Write-Host "================================================================`n" -ForegroundColor Yellow
 
-# Step A: Upload fixed source file directly to VPS via SCP
+# Step A: Upload fixed source files directly to VPS via SCP
 Write-Host "[1/6] Uploading fixed source files directly to production server..." -ForegroundColor Green
 scp -o StrictHostKeyChecking=no features/journal/components/purchase-order-payment-journal.tsx root@72.60.209.121:/var/www/dgt-nextjs/features/journal/components/purchase-order-payment-journal.tsx
+scp -o StrictHostKeyChecking=no features/purchases/components/purchase-booking-journal-report-view.tsx root@72.60.209.121:/var/www/dgt-nextjs/features/purchases/components/purchase-booking-journal-report-view.tsx
+scp -o StrictHostKeyChecking=no app/api/erp/purchases/orders/[id]/route.ts root@72.60.209.121:/var/www/dgt-nextjs/app/api/erp/purchases/orders/[id]/route.ts
 scp -o StrictHostKeyChecking=no ecosystem.config.cjs root@72.60.209.121:/var/www/dgt-nextjs/ecosystem.config.cjs
 scp -o StrictHostKeyChecking=no scripts/healthcheck.sh root@72.60.209.121:/var/www/dgt-nextjs/scripts/healthcheck.sh
 
