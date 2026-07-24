@@ -48,6 +48,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ViewportActionMenu } from "@/components/ui/viewport-action-menu";
+import { UnifiedActionMenu } from "@/components/ui/unified-action-menu";
 import { openPurchaseA4ReportWindow, type PurchaseReportData } from "@/lib/reports/open-purchase-a4-report-window";
 import { PaymentEditModal } from "./payment-edit-modal";
 import { t, tData, type LanguageCode } from "../../i18n/purchase-journal-translations";
@@ -3642,6 +3643,190 @@ export function PurchaseOrderPaymentJournal({ mode = "advance" }: { mode?: Payme
         setTimeout(() => {
           router.push("/dashboard/purchase/purchase-loading-records");
         }, 1200);
+  const calcFinal = useMemo(() => {
+    if (!showCalcPanel) return null;
+    const fAmt = Number(calcAmount || 0);
+    // If PO currency is local (PKR), no conversion rate is needed (rate is 1).
+    // Otherwise we use the user-entered exchangeRate (e.g. 289).
+    const exRate = isPOCurrencyLocal ? 1 : Number(exchangeRate || 1);
+    if (calcOp === "mul") {
+      return fAmt * exRate;
+    } else {
+      return exRate > 0 ? fAmt / exRate : 0;
+    }
+  }, [showCalcPanel, calcAmount, exchangeRate, calcOp, isPOCurrencyLocal]);
+
+  // Derive target numeric payment amount
+  const amount = useMemo(() => {
+    if (showCalcPanel && calcFinal !== null) return calcFinal;
+    return Number(finalPayment || 0);
+  }, [showCalcPanel, calcFinal, finalPayment]);
+
+  const payloadAmount = useMemo(() => {
+    return showCalcPanel
+      ? (isLocalCurrency ? Number(calcFinal || 0) : Number(calcAmount || 0))
+      : Number(finalPayment || 0);
+  }, [showCalcPanel, isLocalCurrency, calcFinal, calcAmount, finalPayment]);
+
+  const canSave = useMemo(() => {
+    return Boolean(paymentSourceLedgerId && roznamchaNumber && paymentType && amount > 0);
+  }, [paymentSourceLedgerId, roznamchaNumber, paymentType, amount]);
+
+  // Dynamic double entry preview values
+  const doubleEntry = useMemo(() => {
+    // For payments (advance, remaining, credit), the debit account is the supplier's party account (salesAccountNo / salesAccountName)
+    // and the credit account is the user-selected payment source account (bank/cash).
+    // If it's a booking entry, we debit the purchase account and credit the supplier's account.
+    const isBooking = (activeMode as string) === "booking";
+
+    const debitCode = isBooking 
+      ? (selectedForm.purchaseAccountNo || "-") 
+      : (selectedForm.salesAccountNo || "LIABILITY-001");
+      
+    const debitName = isBooking 
+      ? (selectedForm.purchaseAccountName || "Purchase Account") 
+      : (selectedForm.salesAccountName || "Supplier Liability Ledger");
+      
+    const debitBranch = isBooking 
+      ? (selectedForm.purchaseAccountBranch || "-") 
+      : (selectedForm.salesAccountBranch || "-");
+
+    const creditCode = isBooking
+      ? (selectedForm.salesAccountNo || "-")
+      : (selectedSourceLedger ? ledgerCode(selectedSourceLedger) : "CASH-001");
+      
+    const creditName = isBooking
+      ? (selectedForm.salesAccountName || "Supplier Liability Ledger")
+      : (selectedSourceLedger ? ledgerName(selectedSourceLedger) : "Cash Book Dubai Branch");
+      
+    const creditBranch = isBooking
+      ? (selectedForm.salesAccountBranch || "-")
+      : (selectedSourceLedger ? (selectedSourceLedger.branchName || "-") : "-");
+
+    return { debitCode, debitName, debitBranch, creditCode, creditName, creditBranch };
+  }, [selectedSourceLedger, selectedForm, activeMode]);
+
+  // Suggested values to make input easier
+  const suggestedAdvance = useMemo(() => {
+    if (!selected) return 0;
+    const form = selected.form_data?.form || {};
+    const totalPrice = selected.form_data?.goodsEntries?.length
+      ? selected.form_data.goodsEntries.reduce((sum: number, g: any) => sum + Number(g.totalAmount || 0), 0)
+      : Number(form.totalAmount || 0);
+    const advancePercent = Number(form.advancePercent || 0);
+    const requiredAdvanceBC = (totalPrice * advancePercent) / 100;
+    const paidAdvanceBC = Number(selected.advance_paid || 0);
+    return Math.max(0, requiredAdvanceBC - paidAdvanceBC);
+  }, [selected]);
+
+  // Final Action POST handler
+  async function handleProcessPayment() {
+    if (!canSave || !selected) return;
+    setProcessingPayment(true);
+    setPaymentSuccess("");
+    setPaymentError("");
+
+    try {
+      const finalRemarks = remarks.trim() || `Automated payment settlement for Purchase Order No: ${selected.purchase_order_no}. Roznamcha Category: ${paymentType.toUpperCase()}.`;
+      const formData = new FormData();
+
+      // Helper to check if a string is a valid UUID
+      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+      // Resolve debit ledger ID by matching code against active ledgers
+      let debitLedgerId = "";
+      const foundDeb = ledgers.find((l) => ledgerCode(l) === doubleEntry.debitCode);
+      if (foundDeb) {
+        debitLedgerId = ledgerId(foundDeb) || "";
+      } else {
+        const rawId = doubleEntry.debitCode === debitAccountCode 
+          ? selectedForm.purchaseAccountLedgerId || selectedForm.purchaseAccountId || selectedForm.supplierId
+          : selectedForm.salesAccountLedgerId || selectedForm.salesAccountId || selectedForm.customerId;
+        debitLedgerId = String(rawId || "");
+      }
+
+      // Resolve credit ledger ID by matching code against active ledgers
+      let creditLedgerId = "";
+      const foundCred = ledgers.find((l) => ledgerCode(l) === doubleEntry.creditCode);
+      if (foundCred) {
+        creditLedgerId = ledgerId(foundCred) || "";
+      } else {
+        if (doubleEntry.creditCode === creditAccountCode) {
+          creditLedgerId = String(selectedForm.salesAccountLedgerId || selectedForm.salesAccountId || selectedForm.customerId || "");
+        } else {
+          creditLedgerId = paymentSourceLedgerId;
+        }
+      }
+
+      if (!isUuid(debitLedgerId) || !isUuid(creditLedgerId)) {
+        setPaymentError("Invalid ledger account selection. Please ensure debit and credit accounts are fully mapped with valid UUIDs.");
+        return;
+      }
+      
+      const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+      const selectedLoadingRecordId = selectedLoadingRecord?.id ? String(selectedLoadingRecord.id) : "";
+      const fromLoading = searchParams.get("fromLoading") === "true" || Boolean(selectedLoadingRecordId);
+      const loadingRecordId = selectedLoadingRecordId || searchParams.get("loadingRecordId") || "";
+
+      const payload = {
+        purchaseOrderId: selected.id,
+        purchaseOrderNo: selected.purchase_order_no,
+        kind: ["advance", "remaining", "credit", "booking"].includes(activeMode) ? activeMode : "advance",
+        debitLedgerId,
+        creditLedgerId,
+        paymentType,
+        roznamchaType,
+        roznamchaNumber,
+        currencyCode: currency,
+        exchangeRate: Number(exchangeRate || 1),
+        amount: payloadAmount,
+        amountLocal: amount,
+        narration: finalRemarks,
+        entryDate: paymentDate,
+        referenceNo: roznamchaNumber || undefined,
+        typeDetails: {
+          ...typeDetails,
+          ...(fromLoading && loadingRecordId ? { loadingRecordId } : {})
+        },
+        doubleEntry,
+        countryId: selected.country_id || null,
+        countryBranchId: selected.country_branch_id || null,
+        cityBranchId: selected.city_branch_id || selected.country_branch_id || null
+      };
+
+      formData.append("payload", JSON.stringify(payload));
+      if (attachmentFile) {
+        formData.append("attachment", attachmentFile);
+      }
+      const postUrl = `/api/erp/purchases/orders/${selected.id}/payments${fromLoading ? "?fromLoading=true" : ""}`;
+
+      const res = await fetch(postUrl, {
+        method: "POST",
+        body: formData,
+        credentials: "include"
+      });
+      const body = await res.json();
+      if (!res.ok || body?.ok === false) {
+        throw new Error(body?.error?.message ?? body?.message ?? "Execution failure on backend server.");
+      }
+
+      const allSerials = [body.data?.serialNumber, body.data?.countrySerialNumber, body.data?.branchSerialNumber].filter(Boolean).join(" | ");
+      setPaymentSuccess(`Double-entry ledger voucher successfully balanced! Journal Serial Number: ${allSerials || "N/A"}.`);
+      setCalcAmount("");
+      setFinalPayment("");
+      setRemarks("");
+      setTypeDetails({});
+      setAttachmentFile(null);
+      
+      // Auto-redirect back to Purchase Loading Records if from loading or in advance/endorsement mode
+      if (fromLoading || (typeof window !== "undefined" && window.location.search.includes("fromLoading=true"))) {
+        setTimeout(() => {
+          router.push("/dashboard/purchase/purchase-loading-records");
+        }, 1200);
+      } else if (activeMode === "advance" && selected?.purchase_order_no) {
+        setTimeout(() => {
+          router.push("/dashboard/purchase/purchase-loading-records");
+        }, 1200);
       } else {
         await loadOrders();
       }
@@ -3750,6 +3935,68 @@ export function PurchaseOrderPaymentJournal({ mode = "advance" }: { mode?: Payme
               statusText.toLowerCase() === "paid" || statusText.toLowerCase() === "completed" || statusText.toLowerCase() === "transferred"
                 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200"
                 : statusText.toLowerCase() === "partial" || statusText.toLowerCase() === "partially_paid"
+                ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200"
+                : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 border border-red-200"
+            )}>
+              {statusText}
+            </span>
+          </td>
+          {/* 13. Action */}
+          <td className="px-3 py-4 align-middle border-b border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+              <UnifiedActionMenu
+                onView={() => setViewingRow(row)}
+                onPrint={() => handleOpenA4PDF(row, true)}
+                onExportPdf={() => handleOpenA4PDF(row, false)}
+                customItems={[
+                  ...(activeMode !== "advance_completed"
+                    ? [
+                        {
+                          label: "Payment Entry",
+                          icon: <WalletCards className="h-4 w-4 text-emerald-500" />,
+                          onClick: () => {
+                            try {
+                              logClientError(`Click Payment Entry. row.id: ${row.id}`);
+                              selectOrder(row.id);
+                            } catch (e: any) {
+                              logClientError(`Error in Payment Entry click: ${e.stack || e.message || String(e)}`);
+                            }
+                          }
+                        }
+                      ]
+                    : []),
+                  ...(activeMode === "advance" && isPosted
+                    ? [
+                        {
+                          label: "Transfer to Loading",
+                          icon: <Truck className="h-4 w-4 text-blue-500" />,
+                          onClick: () => router.push(`/dashboard/purchase/loading-form`)
+                        }
+                      ]
+                    : []),
+                  {
+                    label: isExpanded ? "Hide Payment History" : "Show Payment History",
+                    icon: isExpanded ? <XCircle className="h-4 w-4 text-slate-500" /> : <Plus className="h-4 w-4 text-slate-500" />,
+                    onClick: () => setExpandedIds((prev) => ({ ...prev, [row.id]: !prev[row.id] }))
+                  },
+                  ...(activeMode === "advance_completed"
+                    ? [
+                        {
+                          label: "Revert & Edit Advance",
+                          icon: <RefreshCw className="h-4 w-4 text-indigo-500" />,
+                          onClick: () => router.push(`/dashboard/journal/purchase-order-payment/advance?purchaseOrderNo=${encodeURIComponent(row.purchase_order_no)}`)
+                        }
+                      ]
+                    : [])
+                ]}
+              />
+            </div>
+          </td>
+        </tr>
+        {isExpanded && (
+          <tr onClick={(e) => e.stopPropagation()} style={{ background: "#f8fafc" }}>
+            <td colSpan={13} className="p-4 border-b border-slate-100 dark:border-slate-800">
+              <NestedPaymentHistory 
                 row={row} 
                 ledgers={ledgers} 
                 baseCurrency={baseCurrency} 
@@ -3768,32 +4015,11 @@ export function PurchaseOrderPaymentJournal({ mode = "advance" }: { mode?: Payme
     );
   };
 
-  const recordsTextMap: Record<LanguageCode, string> = {
-    en: "records",
-    ur: "Ø±ÛŒÚ©Ø§Ø±ÚˆØ²",
-    ar: "Ø³Ø¬Ù„Ø§Øª",
-    fa: "Ø±Ú©ÙˆØ±Ø¯Ù‡Ø§",
-    ps: "Ø±ÛŒÚ©Ø§Ø±Ú‰ÙˆÙ†Ù‡"
-  };
-
-  const refreshTextMap: Record<LanguageCode, string> = {
-    en: "Refresh",
-    ur: "ØªØ§Ø²Ù‡ Ú©Ø±ÛŒÚº",
-    ar: "ØªØ­Ø¯ÙŠØ«",
-    fa: "Ø¨Ø±ÙˆØ²Ø±Ø³Ø§Ù†ÛŒ",
-    ps: "ØªØ§Ø²Ù‡ Ú©ÙˆÙ„"
-  };
-
-  const getTableHeader = (h: string) => {
+  const _unused_getTableHeader = (h: string) => {
     const headersMap: Record<string, Record<LanguageCode, string>> = {
-      "PO Number": { en: "PO Number", ur: "آرڈر نمبر", ar: "رقم طلب الشراء", fa: "شماره سفارش", ps: "د امر شمیره" },
+      "PO No.": { en: "PO Number", ur: "آرڈر نمبر", ar: "رقم طلب الشراء", fa: "شماره سفارش", ps: "د امر شمیره" },
       "Bill / Date": { en: "Bill & Date", ur: "بل اور تاریخ", ar: "الفاتورة والتاريخ", fa: "صورتحساب و تاریخ", ps: "بل او نیټه" },
       "Branch / Country": { en: "Branch & Country", ur: "برانچ اور ملک", ar: "الفرع والبلد", fa: "شعبه و کشور", ps: "څانګه او هیواد" },
-      "Goods & Cargo": { en: "Goods & Cargo", ur: "مال اور مقدار", ar: "البضائع والكمية", fa: "کالا و مقدار", ps: "توکي او مقدار" },
-      "Purchase Amount": { en: "Purchase Amount", ur: "کل خریداری", ar: "قيمة المشتريات", fa: "مبلغ خرید", ps: "د پیرودلو قیمت" },
-      "Invoice %": { en: "Invoice %", ur: "ایڈوانس فیصد", ar: "نسبة الدفعة المقدمة", fa: "درصد پیش پرداخت", ps: "د پرمختګ سلنه" },
-      "Invoice Amount": { en: "Invoice Amount", ur: "ایڈوانس رقم", ar: "مبلغ الدفعة المقدمة", fa: "مبلغ پیش پرداخت", ps: "د پرمختګ رقم" },
-      "Remaining Purchase": { en: "Remaining Purchase", ur: "بقایا رقم", ar: "المبلغ المتبقي", fa: "مبلغ باقیمانده", ps: "پاتې رقم" },
       "Exchange Rate": { en: "Exchange Rate", ur: "شرح تبادلہ", ar: "سعر الصرف", fa: "نرخ ارز", ps: "د تبادلې نرخ" },
       "Local Currency Amount": { en: "Local Currency Amount", ur: "مقامی کرنسی رقم", ar: "المبلغ بالعملة المحلية", fa: "مبلغ ارز محلی", ps: "د ځایی اسعارو مقدار" },
       "Local Currency Advance": { en: "Local Currency Advance", ur: "مقامی کرنسی ایڈوانس", ar: "الدفعة المقدمة بالعملة المحلية", fa: "پیش پرداخت ارز محلی", ps: "د ځایی اسعارو پرمختګ" },

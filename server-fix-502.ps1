@@ -1,96 +1,95 @@
 # =============================================================================
-# server-fix-502.ps1  --  502 Bad Gateway: Diagnosis and Permanent Fix
+# server-fix-502.ps1  --  Direct SCP Upload & VPS Fix Script
 # Server : 72.60.209.121
 # App dir: /var/www/dgt-nextjs
 # PM2 app: dgt-nextjs
 # Run    : powershell -ExecutionPolicy Bypass -File server-fix-502.ps1
 # =============================================================================
 
-$SERVER   = "root@72.60.209.121"
-$PM2_NAME = "dgt-nextjs"
-
-function Invoke-SSH {
-    param([string]$Script, [string]$Label = "")
-    if ($Label) { Write-Host "`n========== $Label ==========" -ForegroundColor Cyan }
-    $out = $Script | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $SERVER "bash -s" 2>&1
-    $out | ForEach-Object { Write-Host $_ }
-    return $out
-}
+$SERVER = "root@72.60.209.121"
 
 Write-Host "================================================================" -ForegroundColor Yellow
-Write-Host "  502 Bad Gateway - Production Server Fix" -ForegroundColor Yellow
+Write-Host "  502 Bad Gateway - Direct Code Upload & Server Recovery" -ForegroundColor Yellow
 Write-Host "  Target: $SERVER" -ForegroundColor Yellow
 Write-Host "================================================================`n" -ForegroundColor Yellow
 
-# ─── STEP 1: Full Diagnostic ─────────────────────────────────────────────────
-Write-Host "[1/6] Collecting server diagnostics..." -ForegroundColor Green
+# Step A: Upload fixed source file directly to VPS via SCP
+Write-Host "[1/6] Uploading fixed source files directly to production server..." -ForegroundColor Green
+scp -o StrictHostKeyChecking=no features/journal/components/purchase-order-payment-journal.tsx root@72.60.209.121:/var/www/dgt-nextjs/features/journal/components/purchase-order-payment-journal.tsx
+scp -o StrictHostKeyChecking=no ecosystem.config.cjs root@72.60.209.121:/var/www/dgt-nextjs/ecosystem.config.cjs
+scp -o StrictHostKeyChecking=no scripts/healthcheck.sh root@72.60.209.121:/var/www/dgt-nextjs/scripts/healthcheck.sh
 
-$diag = @"
-echo '=== DISK ==='; df -h / | tail -1
-echo ''; echo '=== RAM ==='; free -h | grep Mem
-echo ''; echo '=== PM2 STATUS ==='; pm2 list 2>&1
-echo ''; echo '=== PORT 3000 ==='; ss -tlnp | grep 3000 || echo 'NOTHING on port 3000'
-echo ''; echo '=== NGINX ==='; systemctl is-active nginx
-echo ''; echo '=== NODE PROCESSES ==='; ps aux | grep -E 'node|next' | grep -v grep || echo 'none'
-echo ''; echo '=== NODE VERSION ==='; node -v && npm -v
-echo ''; echo '=== PM2 ERROR LOG (last 50) ==='; pm2 logs $PM2_NAME --lines 50 --nostream --err 2>&1 | tail -55
-echo ''; echo '=== PM2 OUT LOG (last 20) ==='; pm2 logs $PM2_NAME --lines 20 --nostream --out 2>&1 | tail -25
-"@
+$unifiedScript = @'
+set -e
 
-ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 $SERVER $diag 2>&1
+echo ""
+echo "[2/6] Checking and upgrading Node.js to Node.js 22 LTS..."
+CURRENT_NODE=$(node -v 2>/dev/null || echo "v0.0.0")
+NODE_MAJOR=$(echo "$CURRENT_NODE" | cut -d'.' -f1 | tr -d 'v')
 
-# ─── STEP 2: Ensure 2GB Swap File exists (Prevents OOM Crashes) ─────────────
-Write-Host "`n[2/6] Checking and configuring Swap space..." -ForegroundColor Green
-$swapScript = @'
+if [ "$NODE_MAJOR" -lt 22 ]; then
+    echo "Upgrading to Node.js 22 LTS..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+    echo "Node.js upgrade successful: $(node -v)"
+else
+    echo "Node.js version compliant: $(node -v)"
+fi
+
+echo ""
+echo "[3/6] Configuring 2GB Swap memory..."
 if [ $(free -m | awk '/Swap:/ {print $2}') -eq 0 ]; then
-    echo 'No swap active. Creating 2GB swap file...'
     fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
     chmod 600 /swapfile
     mkswap /swapfile
     swapon /swapfile
     grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
-    echo 'Swap enabled successfully:'
-    free -h
+    echo "Swap enabled."
 else
-    echo 'Swap is already active:'
-    free -h | grep Swap
+    echo "Swap space verified."
 fi
-'@
-ssh -o StrictHostKeyChecking=no $SERVER $swapScript 2>&1
 
-# ─── STEP 3: Restart PM2 with Ecosystem / Memory Limits ───────────────────────
-Write-Host "`n[3/6] Restarting PM2 process '$PM2_NAME'..." -ForegroundColor Green
-ssh -o StrictHostKeyChecking=no $SERVER "cd /var/www/dgt-nextjs && (pm2 startOrReload ecosystem.config.cjs || pm2 restart $PM2_NAME --update-env) && pm2 save" 2>&1
-
-Start-Sleep -Seconds 5
-
-# ─── STEP 4: Verify port 3000 & Rebuild if down ──────────────────────────────
-Write-Host "`n[4/6] Verifying app is listening on port 3000..." -ForegroundColor Green
-$checkPort = @'
-if ! ss -tlnp | grep -q 3000; then
-    echo 'App is NOT running on port 3000. Attempting full rebuild & restart...'
-    cd /var/www/dgt-nextjs
-    git remote set-url origin https://github.com/dgtllccom-cell/vigilant-adventure.git || git remote add origin https://github.com/dgtllccom-cell/vigilant-adventure.git
-    git fetch origin main
-    git reset --hard origin/main
-    npm install
-    NODE_OPTIONS='--max-old-space-size=2048' npm run build
-    pm2 startOrReload ecosystem.config.cjs || pm2 restart dgt-nextjs
-    pm2 save
+echo ""
+echo "[4/6] Verifying environment files..."
+mkdir -p /var/www/env_backups
+if [ ! -f "/var/www/dgt-nextjs/.env.local" ] && [ ! -f "/var/www/dgt-nextjs/.env" ]; then
+    if [ -f "/var/www/env_backups/.env.local.bak" ]; then
+        cp /var/www/env_backups/.env.local.bak /var/www/dgt-nextjs/.env.local
+    elif [ -f "/var/www/env_backups/.env.bak" ]; then
+        cp /var/www/env_backups/.env.bak /var/www/dgt-nextjs/.env.local
+    fi
 fi
-'@
-ssh -o StrictHostKeyChecking=no $SERVER $checkPort 2>&1
 
-# ─── STEP 5: Fix Nginx (raise timeouts, write clean config) ──────────────────
-Write-Host "`n[5/6] Writing optimized Nginx config and reloading..." -ForegroundColor Green
+if [ -f "/var/www/dgt-nextjs/.env.local" ]; then
+    cp -f /var/www/dgt-nextjs/.env.local /var/www/dgt-nextjs/.env 2>/dev/null || true
+    cp -f /var/www/dgt-nextjs/.env.local /var/www/env_backups/.env.local.bak 2>/dev/null || true
+    chmod 600 /var/www/dgt-nextjs/.env.local /var/www/dgt-nextjs/.env 2>/dev/null || true
+fi
 
-# Write the nginx fix script to a temp file and push it
-$nginxScript = @'
-#!/bin/bash
-# Backup existing config
-cp -f /etc/nginx/sites-enabled/default /etc/nginx/sites-enabled/default.bak 2>/dev/null || true
+echo ""
+echo "[5/6] Compiling Next.js production build..."
+cd /var/www/dgt-nextjs
+npm install
 
-# Write clean config
+if ! NODE_OPTIONS='--max-old-space-size=4096' npm run build; then
+    echo "================================================================"
+    echo " ERROR: Production build failed!"
+    echo "================================================================"
+    exit 1
+fi
+
+if [ ! -d "/var/www/dgt-nextjs/.next" ]; then
+    echo "ERROR: Production build failed! .next directory missing."
+    exit 1
+fi
+echo "SUCCESS: Production build completed cleanly."
+
+echo ""
+echo "[6/6] Launching PM2 process & Nginx proxy..."
+pm2 delete dgt-nextjs 2>/dev/null || true
+pm2 start ecosystem.config.cjs
+pm2 save
+
 cat > /etc/nginx/sites-enabled/dgt-nextjs.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
@@ -119,32 +118,39 @@ server {
 }
 NGINXEOF
 
-# Remove the old default if it conflicts
 rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
 
-# Test config and reload
-nginx -t 2>&1 && systemctl reload nginx && echo "Nginx reloaded successfully" || echo "ERROR: Nginx config test failed"
+# Install crontab health check
+chmod +x /var/www/dgt-nextjs/scripts/healthcheck.sh
+(crontab -l 2>/dev/null | grep -v 'healthcheck.sh'; echo "* * * * * /bin/bash /var/www/dgt-nextjs/scripts/healthcheck.sh >> /var/log/dgt-healthcheck.log 2>&1") | crontab -
+pm2 startup systemd -u root --hp /root 2>/dev/null || true
+pm2 save
+
+echo ""
+echo "=== VERIFICATION ==="
+echo "Node Version: $(node -v)"
+echo "PM2 Status:"
+pm2 list
+echo ""
+echo "Port 3000 Listener:"
+ss -tlnp | grep 3000 || (echo "ERROR: Port 3000 not listening!" && exit 1)
+echo ""
+echo "Local HTTP Response:"
+curl -I http://127.0.0.1:3000 || (echo "ERROR: Local HTTP check failed!" && exit 1)
+echo ""
+echo "SUCCESS: ERP application is live on port 3000!"
 '@
 
-$nginxScript | ssh -o StrictHostKeyChecking=no $SERVER "cat > /tmp/nginx_fix.sh && chmod +x /tmp/nginx_fix.sh && bash /tmp/nginx_fix.sh" 2>&1
+$unifiedScript | ssh -o StrictHostKeyChecking=no $SERVER "bash -s"
 
-# ─── STEP 6: Final health check ──────────────────────────────────────────────
-Write-Host "`n[6/6] Running final health check..." -ForegroundColor Green
-Start-Sleep -Seconds 5
-
-$finalCheck = @"
-echo '=== FINAL PM2 STATUS ===' && pm2 list 2>&1
-echo '' && echo '=== PORT 3000 ===' && ss -tlnp | grep 3000 || echo 'PROBLEM: not listening!'
-echo '' && echo '=== NGINX ===' && systemctl is-active nginx
-echo '' && echo '=== CURL LOCAL ===' && curl -s -o /dev/null -w 'HTTP %{http_code} in %{time_total}s' http://127.0.0.1:3000 2>&1 || echo 'curl failed'
-echo '' && echo '=== LAST PM2 ERRORS ===' && pm2 logs $PM2_NAME --lines 10 --nostream --err 2>&1 | tail -12
-"@
-
-ssh -o StrictHostKeyChecking=no $SERVER $finalCheck 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`n================================================================" -ForegroundColor Red
+    Write-Host "  BUILD OR DEPLOYMENT FAILED ON PRODUCTION SERVER." -ForegroundColor Red
+    Write-Host "================================================================`n" -ForegroundColor Red
+    exit 1
+}
 
 Write-Host "`n================================================================" -ForegroundColor Green
-Write-Host "  Done! If the app is still down, run a full rebuild:" -ForegroundColor Green
-Write-Host "  ssh root@72.60.209.121 'cd /var/www/dgt-nextjs && git pull && npm install && npm run build && pm2 restart dgt-nextjs'" -ForegroundColor Yellow
+Write-Host "  Execution Complete & Verified! Production URL: http://72.60.209.121" -ForegroundColor Green
 Write-Host "================================================================`n" -ForegroundColor Green
-
-Read-Host "Press Enter to exit"

@@ -47,6 +47,7 @@ import { openProformaInvoiceWindow } from "@/lib/reports/open-proforma-invoice-w
 import { openTradeDocumentWindow } from "@/lib/reports/open-trade-document-window";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { UnifiedActionMenu } from "@/components/ui/unified-action-menu";
 
 type PurchaseReport = {
   id: string;
